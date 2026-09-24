@@ -68,7 +68,7 @@ Sizes in the data are mixed: letter sizes (`M`, `S/M`, `L/XL`,
 
 - **What it does:** Filters `data/listings.json` by price ceiling and size, then ranks what is left by keyword overlap with the description.
 - **Inputs:** `description` (str) — keywords like `"vintage graphic tee"`; `size` (str or None) — `None` skips the size filter; `max_price` (float or None) — inclusive ceiling, `None` skips the price filter.
-- **Returns:** A `list[dict]` of at most `config.SEARCH_RESULT_LIMIT` (10) listing dicts, best match first. Each dict is the full listing with the fields above, unchanged — `id`, `title`, `price`, `size`, `platform` and the rest. Ranking: a word matching the title or a style tag counts 3, the category 2, a color, brand or description word 1; anything scoring 0 is dropped.
+- **Returns:** A `list[dict]` of at most `config.SEARCH_RESULT_LIMIT` (10) listing dicts, best match first. Each dict is the full listing with the fields above, unchanged — `id`, `title`, `price`, `size`, `platform` and the rest. Ranking: each query word scores 4 if it is in the title, else 3 in a style tag, else 2 in the category, else 1 in a color, the brand or the description; anything scoring 0 is dropped.
 - **Size rule:** the listing size is split on `/`, spaces and parentheses into whole tokens, and the requested size must equal one of them, case-insensitively. So `M` matches `M`, `S/M`, `M/L`, but `L` does **not** match `XL`, `S` does not match `US 9`, and `8` matches `US 8` but not `US 8.5`. `One Size` listings match any letter size (XS–XXL).
 - **When it has nothing:** an empty list `[]` — never `None`, never an exception.
 
