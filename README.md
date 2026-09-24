@@ -39,8 +39,14 @@
 
 ## What This Does
 
-<!-- Three or four sentences: what a user asks for, and what they get back. -->
-
+A user types what they're thrifting for in plain language, like
+`vintage graphic tee under $30` or `platform sneakers size 8`. FitFindr pulls
+the item words, size and price ceiling out of that sentence and searches 40
+listings from Depop, thredUp and Poshmark. It picks the best match and asks
+the model for two outfits built from the user's saved wardrobe, then writes a
+short caption for posting the fit. If nothing matches, it stops before
+calling the model and says which part of the request to change: the budget,
+the size, or the wording.
 
 
 ---
@@ -114,9 +120,30 @@ what kind of item they want, instead of returning every listing under $30.
 
 **Where it lives:** `agent.py::run_agent`
 
-**How the query is parsed:** <!-- regex, string splitting, or asking the model — say which -->
+**How the query is parsed:** Regex, in `agent.py::parse_query`, with no model
+call. `under/below/less than/max/up to $N` (or a bare `$N`) becomes
+`max_price`. `size X` / `in size X` becomes `size` (a leading `US` is
+dropped, so `size US 8` → `8`). Whatever is left is the `description`.
 
-**What moves through the session:** <!-- which fields, in what order -->
+**How the loop runs:** `run_agent` is a `while step != "done"` loop. Each pass
+runs one step (`parse` → `search` → `suggest` → `fit_card`), and the step
+picks the next one from what it just put in the session. Every pass calls
+`trace.check_iterations(count)` first.
+
+**The empty-search message:** `agent.py::explain_no_results` re-runs the
+search without the price, then without the size, then with the words only.
+From that it tells the user which filter emptied the results, e.g.
+*"The price is what's ruling it out: the cheapest match is Platform
+Sneakers — White Chunky Sole at $48. Try raising your budget to $48."*
+
+**What moves through the session:** in order:
+`query` → `parsed` (`description`, `size`, `max_price`) →
+`search_results` (list of listing dicts) → `selected_item`
+(`search_results[0]`) → `outfit_suggestion` → `fit_card`. `steps` records
+which tools ran, and `tool_inputs` records exactly what each tool was called
+with. That is how criterion 3 checks that `selected_item` is the item
+`suggest_outfit` and `create_fit_card` received. On an early stop `error` is
+set and `selected_item`, `outfit_suggestion` and `fit_card` stay `None`.
 
 ---
 
@@ -130,26 +157,98 @@ what kind of item they want, instead of returning every listing under $30.
 **One full query**
 
 ```
-$ python app.py ask '...'
+$ python app.py ask 'vintage graphic tee under $30'
 
+  Found:    Vintage Band Tee — Faded Grey — $19.0 on depop
+
+  Outfit:   Outfit One
+Baggy straight-leg jeans, dark wash
+Vintage Band Tee — Faded Grey
+Vintage black denim jacket
+Black combat boots
+Black crossbody bag
+
+This works because the dark denim and combat boots lean into the vintage grunge vibe, while the cropped jacket balances the oversized tee.
+
+
+Outfit Two
+Wide-leg khaki trousers
+Vintage Band Tee — Faded Grey
+Brown leather belt
+Chunky white sneakers
+Black crossbody bag
+
+This works by pairing the relaxed band tee with tailored earth-toned trousers for an effortless, high-low streetwear look.
+
+  Fit card: Scored this faded grey band tee on depop for just $19 and I am so obsessed with how it looks dressed down with baggy dark denim and combat boots. It gives off the absolute best effortless grunge energy, but I also love pairing it with tailored khakis for a slouchy high low mix. vintagebandtee grunge streetwear
+
+$ python app.py ask 'designer ballgown size XXS under $5'
+
+  Nothing matched 'designer ballgown' in size XXS under $5. No listing uses the words 'designer ballgown', so it's the wording, not your size or budget. Try a plainer word for the item (tee, jeans, jacket, sneakers, bag) or a style (vintage, y2k, grunge, 90s).
+
+0 model calls this session
+
+$ python -c "from agent import run_agent; from utils.data_loader import get_example_wardrobe as w; s=run_agent('vintage graphic tee under \$30', w()); print(s['selected_item']['id'], s['search_results'][0]['id'], s['tool_inputs']['suggest_outfit']['new_item']['id'], s['tool_inputs']['create_fit_card']['new_item']['id'], s['steps'])"
+lst_033 lst_033 lst_033 lst_033 ['search_listings', 'suggest_outfit', 'create_fit_card']
 ```
 
 **The three tools, tested one at a time**
 
 ```
-$ python -c "from tools import search_listings; print(search_listings('graphic tee', max_price=30))"
+$ python -c "from tools import search_listings; print(search_listings('graphic tee', max_price=30)[0])"
+{'id': 'lst_006', 'title': 'Graphic Tee — 2003 Tour Bootleg Style', 'description': 'Vintage-style bootleg tee with faded graphic. Slightly boxy fit. 100% cotton, soft and worn-in.', 'category': 'tops', 'style_tags': ['graphic tee', 'vintage', 'grunge', 'streetwear', 'band tee'], 'size': 'L', 'condition': 'good', 'price': 24.0, 'colors': ['black'], 'brand': None, 'platform': 'depop'}
 
+$ python -c "from tools import search_listings; print(search_listings('designer ballgown', size='XXS', max_price=5))"
+[]
 ```
 
 ```
-$ python -c "from tools import suggest_outfit; ..."
+$ python -c "from tools import suggest_outfit; from utils.data_loader import get_example_wardrobe, load_listings; print(suggest_outfit(load_listings()[5], get_example_wardrobe()))"
+Outfit 1:
+Graphic Tee — 2003 Tour Bootleg Style
+Baggy straight-leg jeans, dark wash
+Vintage black denim jacket
+Black combat boots
+Black crossbody bag
 
+This works because it leans fully into a cohesive grunge streetwear aesthetic using matching black denim and rugged boots.
+
+
+Outfit 2:
+Graphic Tee — 2003 Tour Bootleg Style
+Wide-leg khaki trousers
+Brown leather belt
+Chunky white sneakers
+Black crossbody bag
+
+This works by pairing the edgy graphic top with clean earth tones to create a balanced, casual streetwear look.
+
+$ python -c "from tools import suggest_outfit; from utils.data_loader import get_empty_wardrobe, load_listings; print(suggest_outfit(load_listings()[5], get_empty_wardrobe()))"
+No saved wardrobe yet — general ideas: Outfit 1: Pair the tee with baggy distressed light-wash denim and chunky black skate sneakers for an authentic 90s grunge look. Layer an oversized plaid flannel shirt unbuttoned over top to add depth and tie the effortless streetwear vibe together.
+
+Outfit 2: Tuck the tee into a black pleated tennis skirt and add knee-high combat boots for a sharp contrast of edgy and feminine styles. Finish with a beat-up leather moto jacket draped over the shoulders to lean fully into the vintage tour aesthetic.
 ```
 
-```
-$ python -c "from tools import create_fit_card; ..."
+Run three times with the cache off (`AI201_CACHE=0`), to check the captions
+actually vary:
 
 ```
+$ AI201_CACHE=0 python -c "from tools import create_fit_card; from utils.data_loader import load_listings; print(create_fit_card('Tee with baggy dark jeans, black combat boots and a black denim jacket', load_listings()[5]))"
+Scored this bootleg tour tee for $24 on depop and haven't taken it off since. Paired it with baggy dark denim and heavy combat boots for that effortless 90s grunge look. Channeling total concert-aftermath energy today. #grunge #bandtee #streetwear
+---
+scored this vintage bootleg tour tee for $24 on depop and it is instantly my favorite piece. pairing it with baggy denim and combat boots gives off such an effortlessly heavy grunge energy. perfect for shuffling around the city on a overcast afternoon.
+
+#grunge #depop #streetwear
+---
+Scored this bootleg tour tee for $24 on depop and it is the ultimate grunge staple. Paired it with baggy dark denim and heavy boots for that effortlessly worn-in streetwear look. The faded graphics give it instant character. streetwear grunge vintage
+
+$ python -c "from tools import create_fit_card; from utils.data_loader import load_listings; print(create_fit_card('   ', load_listings()[5]))"
+Couldn't write a fit card: no outfit suggestion was provided for Graphic Tee — 2003 Tour Bootleg Style.
+```
+
+The three captions differ, but all three open with "Scored this", and one
+dropped the `#` from its hashtags. Both are worth checking against
+criterion 4 in unit 4.
 
 ---
 
@@ -162,17 +261,34 @@ $ python -c "from tools import create_fit_card; ..."
      "I gave Claude my search_listings spec. It returned None on no match
      instead of an empty list, so I changed it" is the level we want. -->
 
+I used Claude Code for this build.
+
 **Moment 1**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* `search_listings` built from my Tool Inventory spec:
+  keyword-overlap scoring, a whole-token size match, and `[]` on no match.
+- *What came back:* A working search where a title word and a style-tag word
+  both scored 3. I tested `search_listings('vintage crewneck', size='L')` and
+  the size filter was right (both `XL` crewnecks were excluded). But the top
+  two results were a braided belt and a bucket hat. They are `One Size`, carry
+  the `vintage` tag, and tied with the tees, so the cheaper price sorted them
+  first.
+- *What I changed:* I raised title matches to 4, so a word in the title beats
+  the same word in a tag. The top results became the band tee and the graphic
+  hoodie. I updated the ranking line in the Tool Inventory to match.
 
 **Moment 2**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* For each criterion, how it could be tested using only
+  the sentence as written.
+- *What came back:* Criterion 5 listed `jeans size L under $40` as one of its
+  test queries. Every pair of jeans in the data has a waist size (`W28`,
+  `W30 L30`, …), so that search returns `[]`. "Every result respects the size"
+  would then pass on an empty list without testing anything.
+- *What I changed:* I swapped that query for `vintage crewneck size L`. The
+  only crewnecks are `XL`, so this catches the `"l" in "xl"` substring bug.
+  I also added "at least one result must come back for each query", so an
+  empty list can't pass.
 
 <!-- ═══════════════════════ UNIT 4 — THE TEST ═══════════════════════
 
