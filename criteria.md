@@ -25,9 +25,11 @@ Given a query that matches at least one listing, the agent completes all three
 tool calls and returns a fit card — in at least 4 of 5 tries.
 
 **Why this target:**
-<!-- Why 4 of 5 and not 5 of 5? Something about your search, probably —
-     "my search is a plain keyword match and some phrasings will miss" is a
-     real answer. -->
+I picked 4 of 5, not 5 of 5, because two of the three calls go to a model on
+the free tier. A rate-limit error that runs out of retries, or a blocked
+response, can end one try even when my search and loop are fine. The search
+itself doesn't vary run to run (it's a plain keyword match over a fixed file),
+so if this misses by more than one it points at the model calls.
 
 ---
 
@@ -37,66 +39,69 @@ Given a query that matches no listings, the agent stops before calling
 `suggest_outfit` and returns a message naming what to change — 5 of 5 tries.
 
 **Why this target:**
-<!-- Why is 5 of 5 reasonable here when criterion 1 isn't? What's different
-     about this path? -->
+This path never calls the model. It's `search_listings` returning `[]` and
+an `if` in `run_agent`, and both are deterministic. The same query gives the
+same result every time, so anything below 5 of 5 means the branch is broken.
+It isn't noise. "Naming what to change" means the message names at least one
+of the price, the size or the wording, e.g. "nothing under $5 — the cheapest
+match is $38".
 
 ---
 
-## 3. Something about state
+## 3. The item search picked is the item the next two tools received
 
-<!-- YOU WRITE THIS ONE.
-
-     How would you know that the item your search found is the same item the
-     next tool received? Name something countable or observable.
-
-     This is the criterion people find hardest, because state failure doesn't
-     look like state failure — it looks like a tool problem. Something that
-     compares session["selected_item"] against what actually reached
-     suggest_outfit is the shape you're after. -->
-
-
+Given a matching query, `session["selected_item"]["id"]` equals
+`session["search_results"][0]["id"]`, and the same `id` is in the item
+`suggest_outfit` received and the item `create_fit_card` received (recorded
+in `session["tool_inputs"]`). All three ids agree in 5 of 5 tries.
 
 **Why this target:**
-
-
+5 of 5, because nothing random sits between search and the next tool call.
+The item goes into the session and comes back out as the same dict. If the ids
+ever disagree, the loop is reading from the wrong place, for example
+re-searching, taking a different index, or letting the user re-type it. That is
+a bug, not variation. I compare `id`s rather than titles because two listings
+could share a title.
 
 ---
 
-## 4. Something about the fit card
+## 4. The fit card is postable and names the facts
 
-<!-- YOU WRITE THIS ONE.
-
-     The fit card calls a model, so the same input can produce different words
-     each time. That's not a bug — it's the nature of the tool. So what would
-     make it acceptable?
-
-     Think about what you'd actually be unhappy to see. A caption that never
-     mentions the price? Two different items producing the same opening
-     sentence? A card longer than a caption anyone would post? Any of those can
-     be turned into a number. -->
-
-
+For the matching query run 5 times with the cache off, the fit card
+(a) contains the item's price as `$NN` (e.g. `$24` or `$24.00`), (b) contains
+the platform name (case-insensitive), (c) is 400 characters or fewer, and
+(d) has at most 3 hashtags. All four hold in at least 4 of 5 tries, and no two
+of the 5 cards share the same first sentence.
 
 **Why this target:**
-
-
+The words are supposed to change from run to run, so I don't check wording.
+I check the facts a caption needs (price, platform) and the limits a real post
+has (length, not a wall of hashtags). All four are string checks anyone can
+do without asking me. I picked 4 of 5 and not 5 of 5 because the prompt asks
+for these things but the model at temperature 0.9 sometimes writes "under
+thirty bucks" instead of "$24", or goes a bit long. The "no two identical
+first sentences" part makes sure the cache is off and the temperature isn't 0.
 
 ---
 
-## 5. Your choice
+## 5. Search respects the price ceiling and size
 
-<!-- YOU WRITE THIS ONE TOO.
-
-     Pick something you actually care about getting right. Speed, the empty
-     wardrobe path, what happens when the model can't be reached, whether the
-     search respects a price ceiling — anything, as long as it names a number
-     or an observable outcome. -->
-
-
+For these 5 queries, every listing in `session["search_results"]` has
+`price <= max_price` and a size that passes the size rule in the README
+(whole-token match, so `L` never returns `XL` and `S` never returns
+`US 9`): `vintage graphic tee under $30`, `90s track jacket in size M`,
+`platform sneakers size 8`, `denim jacket under $50`,
+`vintage crewneck size L`. 5 of 5 queries, with zero violating listings in
+any of them. At least one result must come back for each query, so an empty list can't pass.
 
 **Why this target:**
-
-
+A thrift agent that shows a $45 jacket to someone who said "under $30", or
+shoes to someone who asked for a small top, is simply wrong, however good the
+caption is. This criterion tests the query parsing (regex) and the filter in
+`search_listings`. Neither is random, so the target is 5 of 5. The last query
+is there on purpose to catch the `"l" in "xl"` substring bug the starter warns
+about: both crewnecks in the data are `XL`, so a substring filter would let
+them through.
 
 ---
 
