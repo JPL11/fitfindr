@@ -58,6 +58,11 @@ def _words(text: str) -> list[str]:
     return out
 
 
+def query_keywords(text: str) -> list[str]:
+    """The words search_listings actually scores on — stopwords removed."""
+    return [w for w in _words(text or "") if w not in _STOPWORDS]
+
+
 def _size_matches(wanted: str, listing_size: str) -> bool:
     """
     Whole-token size match. The listing size is split on "/", spaces and
@@ -152,7 +157,7 @@ def search_listings(
     Test it from a terminal before you move on:
         python -c "from tools import search_listings; print(search_listings('graphic tee', max_price=30))"
     """
-    keywords = [w for w in _words(description or "") if w not in _STOPWORDS]
+    keywords = query_keywords(description)
     if not keywords:
         return []
 
