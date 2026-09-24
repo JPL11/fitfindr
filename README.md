@@ -57,26 +57,34 @@
      on, and if you don't decide it here you'll discover it as a crash in
      Milestone 5. -->
 
+Listing fields (from `python app.py fields`): `id`, `title`, `description`,
+`category`, `style_tags` (list), `size`, `condition`, `price` (float),
+`colors` (list), `brand` (str or None — None for most listings), `platform`.
+Sizes in the data are mixed: letter sizes (`M`, `S/M`, `L/XL`,
+`XL (oversized)`), waist sizes (`W28`, `W30 L30`), shoe sizes (`US 8.5`) and
+`One Size`. An empty wardrobe is `{"items": []}`.
+
 ### `search_listings`
 
-- **What it does:**
-- **Inputs:** <!-- name and type each: `max_price` (float), not "a price" -->
-- **Returns:**
-- **When it has nothing:**
+- **What it does:** Filters `data/listings.json` by price ceiling and size, then ranks what is left by keyword overlap with the description.
+- **Inputs:** `description` (str) — keywords like `"vintage graphic tee"`; `size` (str or None) — `None` skips the size filter; `max_price` (float or None) — inclusive ceiling, `None` skips the price filter.
+- **Returns:** A `list[dict]` of at most `config.SEARCH_RESULT_LIMIT` (10) listing dicts, best match first. Each dict is the full listing with the fields above, unchanged — `id`, `title`, `price`, `size`, `platform` and the rest. Ranking: a word matching the title or a style tag counts 3, the category 2, a color, brand or description word 1; anything scoring 0 is dropped.
+- **Size rule:** the listing size is split on `/`, spaces and parentheses into whole tokens, and the requested size must equal one of them, case-insensitively. So `M` matches `M`, `S/M`, `M/L`, but `L` does **not** match `XL`, `S` does not match `US 9`, and `8` matches `US 8` but not `US 8.5`. `One Size` listings match any letter size (XS–XXL).
+- **When it has nothing:** an empty list `[]` — never `None`, never an exception.
 
 ### `suggest_outfit`
 
-- **What it does:**
-- **Inputs:**
-- **Returns:**
-- **When it has nothing:**
+- **What it does:** Asks the model for one or two outfits built around the new item, using pieces the user already owns.
+- **Inputs:** `new_item` (dict) — one listing dict from `search_listings`; `wardrobe` (dict) — `{"items": [wardrobe item dicts]}`, where each item has `id`, `name`, `category`, `colors`, `style_tags`, `notes`.
+- **Returns:** a non-empty `str` of outfit suggestions, 2 outfits max, each naming the wardrobe pieces by their `name`.
+- **When it has nothing:** if `wardrobe["items"]` is empty (or missing), it does not fail — it asks the model for general styling advice for the item (what kinds of pieces pair with it) and returns that string, starting with `No saved wardrobe yet — general ideas:`.
 
 ### `create_fit_card`
 
-- **What it does:**
-- **Inputs:**
-- **Returns:**
-- **When it has nothing:**
+- **What it does:** Asks the model for a short social-media caption about the find and the outfit.
+- **Inputs:** `outfit` (str) — the string `suggest_outfit` returned; `new_item` (dict) — the same listing dict.
+- **Returns:** a `str` caption of 2–4 sentences (under 400 characters requested) that names the item, its price as `$NN` and its platform once each, and says something about the outfit's vibe. At most 3 hashtags.
+- **When it has nothing:** if `outfit` is empty or only whitespace, it does not call the model and returns the string `Couldn't write a fit card: no outfit suggestion was provided for <item title>.`
 
 ---
 
@@ -93,7 +101,16 @@
      The grader checks your code against what you claim here, so the file and
      function have to be real. -->
 
-**Branch rule:**
+**Branch rule:** If `search_listings` returns an empty list, put a message in
+`session["error"]` that names which filter to loosen (price, size, or wording —
+worked out by re-checking the search without each one) and stop, leaving
+`selected_item`, `outfit_suggestion` and `fit_card` as `None`. Otherwise take
+the first (highest-scoring) result as `session["selected_item"]` and go on to
+`suggest_outfit`, then `create_fit_card`.
+
+**Second branch (stretch):** If parsing leaves no description words at all
+(e.g. the query was just `under $30`), stop before searching and ask the user
+what kind of item they want, instead of returning every listing under $30.
 
 **Where it lives:** `agent.py::run_agent`
 
