@@ -293,9 +293,9 @@ I used Claude Code for this build.
 **Moment 3 (unit 4)**
 
 - *What I asked for:* For Claude Code to score the before run against my
-  criteria. Then, separately, to read all 20 fit cards and argue the opposite
-  of my criterion 4 verdict (MET 5/5).
-- *What came back:* The scorer said MET on all five. The argument against was
+  criteria, and then to read all 20 fit cards themselves instead of trusting
+  the counts.
+- *What came back:* The scorer said MET on all five. Reading the cards showed
   that criterion 4 passed cards ending `vintage streetwear bandtee` (no `#`,
   so my regex counted zero hashtags, which is "at most 3"), and that four
   "Scored this … on depop for just $19" openers counted as five different
@@ -330,7 +330,9 @@ I used Claude Code for this build.
 [`results/run_2026-10-04_1218_before.md`](results/run_2026-10-04_1218_before.md),
 plus the raw sessions in the matching `.json`. PASS/FAIL comes from
 `python score_run.py results/run_2026-10-04_1218_before.json`, which applies
-each criterion in `criteria.md` as written. For criteria 1–4 the five tries
+each criterion in `criteria.md` as written. (`score_run.py`, the JSON dump
+and the per-scenario `tries` key in `run_eval.py` are test tooling. They
+don't touch the agent.) For criteria 1–4 the five tries
 are five runs of the same query. For criterion 5 they are the five queries
 the criterion names, run once each (the search is deterministic).
 
