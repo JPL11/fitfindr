@@ -67,23 +67,37 @@ from tools import search_listings as _search_listings_impl  # noqa: F401 — you
 mcp = FastMCP("fitfindr", log_level="WARNING")
 
 
-# ── TODO: uncomment and fill this in ──────────────────────────────────────────
-#
-# @mcp.tool()
-# def search_listings(
-#     description: str,
-#     size: str | None = None,
-#     max_price: float | None = None,
-# ) -> list[dict]:
-#     """
-#     <-- YOUR DESCRIPTION GOES HERE.
-#
-#         One or two sentences. What does this tool do, what does it need, and
-#         what does it give back when it finds nothing? Written for a reader
-#         who cannot see the code.
-#     """
-#     return _search_listings_impl(description, size, max_price)
-#
+@mcp.tool()
+def search_listings(
+    description: str,
+    size: str | None = None,
+    max_price: float | None = None,
+) -> list[dict]:
+    """
+    Search 40 secondhand clothing listings (Depop, thredUp, Poshmark) by
+    keywords, with an optional size and an optional price ceiling.
+
+    Inputs:
+      description: item keywords, e.g. "vintage graphic tee". Required.
+      size: one size to match exactly, case-insensitive, e.g. "M", "L", "8"
+            (shoe), "W30" (waist). "M" matches "S/M" and "M/L"; "L" does NOT
+            match "XL". Letter sizes also match "One Size" listings. Omit or
+            null to skip size filtering.
+      max_price: ceiling in US dollars, inclusive, e.g. 30 or 29.99. Omit or
+            null to skip price filtering.
+
+    Returns a list of at most 10 listing objects, best keyword match first.
+    Each has: id (str), title (str), description (str), category (one of
+    tops, bottoms, outerwear, shoes, accessories), style_tags (list of str),
+    size (str), condition (excellent/good/fair), price (float, USD),
+    colors (list of str), brand (str or null — usually null), platform
+    (depop, thredUp or poshmark).
+
+    When nothing matches, returns an empty list [] — not an error.
+    """
+    return _search_listings_impl(description, size, max_price)
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 #
 # Two notes on the block above.

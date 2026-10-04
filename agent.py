@@ -17,7 +17,8 @@ import re
 
 import config
 import trace
-from tools import search_listings, suggest_outfit, create_fit_card, query_keywords
+from tools import suggest_outfit, create_fit_card, query_keywords
+from mcp_client import call_tool, MCPError
 from generate import ModelUnavailable  # noqa: F401 — handled in unit 4
 
 
@@ -135,9 +136,17 @@ def run_agent(query: str, wardrobe: dict) -> dict:
         elif step == "search":
             parsed = session["parsed"]
             session["tool_inputs"]["search_listings"] = dict(parsed)
-            session["search_results"] = search_listings(
-                parsed["description"], parsed["size"], parsed["max_price"]
-            )
+            try:
+                session["search_results"] = _search(
+                    parsed["description"], parsed["size"], parsed["max_price"]
+                )
+            except MCPError as exc:
+                session["error"] = (
+                    "The listing search couldn't be reached, so nothing was "
+                    f"searched. Try again in a moment. ({str(exc).splitlines()[0]})"
+                )
+                step = "done"
+                continue
             session["steps"].append("search_listings")
 
             # Branch 1: empty search — stop and say what to change.
@@ -166,6 +175,15 @@ def run_agent(query: str, wardrobe: dict) -> dict:
             step = "done"
 
     return session
+
+
+def _search(description: str, size: str | None, max_price: float | None) -> list[dict]:
+    """search_listings, called through the MCP server in mcp_server.py."""
+    return call_tool("search_listings", {
+        "description": description,
+        "size": size,
+        "max_price": max_price,
+    })
 
 
 # ── query parsing ─────────────────────────────────────────────────────────────
@@ -219,9 +237,9 @@ def explain_no_results(parsed: dict) -> str:
         f" under ${price:.0f}" if price is not None else ""
     )
 
-    without_price = search_listings(desc, size, None) if price is not None else []
-    without_size = search_listings(desc, None, price) if size else []
-    words_only = search_listings(desc, None, None)
+    without_price = _search(desc, size, None) if price is not None else []
+    without_size = _search(desc, None, price) if size else []
+    words_only = _search(desc, None, None)
 
     if without_price:
         cheapest = min(without_price, key=lambda l: l["price"])

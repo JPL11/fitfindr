@@ -381,12 +381,23 @@ that produced it:
 
 ```
 
-**On the MCP move:** <!-- what changed in your code, and whether anything
-behaved differently afterwards. If the rewire didn't work, say exactly where it
-broke — the error text and the last thing that worked. That earns the point in
-full. -->
+**On the MCP move:** `search_listings` is registered in
+`mcp_server.py` with a description written for an agent that can't see the
+code. It gives units (US dollars, inclusive), the exact size-match rule (`L`
+doesn't match `XL`), every field of a returned listing, and the empty case
+(`[]`, not an error). In `agent.py` the direct call became
+`call_tool("search_listings", {...})`, wrapped in `agent.py::_search`. The
+empty-search diagnosis in `explain_no_results` goes through the same path. A
+failed MCP call (`MCPError`) now ends the run with a message instead of a
+stack trace.
 
-
+Nothing behaved differently afterwards. I called the tool both ways on three
+inputs (a normal query, a size-filtered query, an impossible query) and
+compared with `==`: `True` all three times, `[]` came back as `[]` and not as
+`None` or `"[]"`, and `price` stayed a float. The one visible change is speed.
+Each MCP call starts a fresh server process, which adds about a second per
+search. The empty path does up to four searches (one plus three diagnostic
+re-searches), so it pays that four times.
 
 ---
 
