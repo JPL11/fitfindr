@@ -308,9 +308,13 @@ def create_fit_card(outfit: str, new_item: dict) -> str:
         f"How I'm styling it:\n{outfit}\n\n"
         "Write the caption for my post about this fit. Rules:\n"
         "- 2 to 4 sentences, under 400 characters total.\n"
-        f"- Mention the item, the price written exactly as {price}, and "
-        f"{platform} — each once.\n"
+        "- Open with the outfit or the mood, in your own words. Do NOT start "
+        "with 'Scored', 'Found', 'Just thrifted', 'Snagged' or any other "
+        "'I bought this' opener, and don't put the price in the first sentence.\n"
+        f"- Later in the caption, mention the item, the price written exactly "
+        f"as {price}, and {platform} — each once.\n"
         "- Say something specific about the vibe of the outfit, not a product description.\n"
-        "- At most 3 hashtags, at the end."
+        "- End with 2 or 3 hashtags, each one starting with the # symbol "
+        "(like #thrifted), and no other tag words."
     )
     return generate(prompt, system=system).strip()

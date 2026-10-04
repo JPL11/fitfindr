@@ -290,6 +290,33 @@ I used Claude Code for this build.
   I also added "at least one result must come back for each query", so an
   empty list can't pass.
 
+**Moment 3 (unit 4)**
+
+- *What I asked for:* For Claude Code to score the before run against my
+  criteria. Then, separately, to read all 20 fit cards and argue the opposite
+  of my criterion 4 verdict (MET 5/5).
+- *What came back:* The scorer said MET on all five. The argument against was
+  that criterion 4 passed cards ending `vintage streetwear bandtee` (no `#`,
+  so my regex counted zero hashtags, which is "at most 3"), and that four
+  "Scored this … on depop for just $19" openers counted as five different
+  first sentences.
+- *What I changed:* I didn't change the verdict. It's MET as written. I added
+  a revision under criterion 4 in `criteria.md` with the reason, kept the
+  original, and scored both rows. The revised one missed 2/5, which is what
+  pointed the improvement at the prompt.
+
+**Moment 4 (unit 4)**
+
+- *What I asked for:* The model-unavailable handler, triggered with one
+  wrong character in the key.
+- *What came back:* The first version of the trace printed
+  `in: dict with keys: description, size, max_price` for the parse and search
+  steps, because `trace._short` collapses any dict without a `title`. That
+  told me nothing about which filter went in.
+- *What I changed:* I added `agent.py::_fmt`, which passes the parsed query
+  as `description='…', size=…, max_price=…`. The empty-search trace now shows
+  `size='XXS', max_price=5.0` right next to `[] (empty)`.
+
 <!-- ═══════════════════════ UNIT 4 — THE TEST ═══════════════════════
 
      Don't fill these in during unit 3.
@@ -394,7 +421,7 @@ Both crewnecks in the data are `XL` and neither came back:
 
 **Nothing missed against the unit 3 targets, and some of those targets were
 too low.** Criterion 1 at 4 of 5 was a hedge for rate-limit failures. The
-starter's pacing and retries absorbed every limit hit (the run paused four
+starter's pacing and retries absorbed every limit hit (the run paused five
 times and never failed), so 5 of 5 is the honest target now. Criteria 2, 3
 and 5 test deterministic code, and 5/5 is what they should get. They
 confirm the branch, the session and the filters work. They were never likely
@@ -605,41 +632,115 @@ re-searches), so it pays that four times.
 
 ## The Improvement
 
-<!-- What you changed, why your diagnosis pointed at it, and the after-run in
-     the same table format. One change, measured properly.
+**What I changed:** One prompt, in `tools.py::create_fit_card`. Two rules
+were rewritten and nothing else changed (same model, same temperature, same
+system line, same inputs):
 
-     `python run_eval.py --label after` -->
+```diff
+-        f"- Mention the item, the price written exactly as {price}, and "
+-        f"{platform} — each once.\n"
++        "- Open with the outfit or the mood, in your own words. Do NOT start "
++        "with 'Scored', 'Found', 'Just thrifted', 'Snagged' or any other "
++        "'I bought this' opener, and don't put the price in the first sentence.\n"
++        f"- Later in the caption, mention the item, the price written exactly "
++        f"as {price}, and {platform} — each once.\n"
+         "- Say something specific about the vibe of the outfit, not a product description.\n"
+-        "- At most 3 hashtags, at the end."
++        "- End with 2 or 3 hashtags, each one starting with the # symbol "
++        "(like #thrifted), and no other tag words."
+```
 
-**What I changed:**
-
-**Which failure it was meant to fix:**
+**Which failure it was meant to fix:** Criterion 4 as revised (4R), which
+missed 2/5 in the before run. The diagnosis put both halves of that miss in
+this prompt: "at most 3 hashtags" allowed bare-word tags, and the
+"mention item, price, platform" rule produced a "Scored this … for $19"
+opener every time. The hashtag rule now names the `#` and a minimum. The
+facts move out of the first sentence, so the opener has to say something
+else.
 
 ### Run Log — After
 
+`python run_eval.py --label after`. Same scenarios, cache off. Log:
+[`results/run_2026-10-04_1224_after.md`](results/run_2026-10-04_1224_after.md).
+Scored with `score_run.py`.
+
 | Criterion | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |
 |---|---|---|---|---|---|---|---|
-| 1.  |  |  |  |  |  |  |  |
-| 2.  |  |  |  |  |  |  |  |
-| 3.  |  |  |  |  |  |  |  |
-| 4.  |  |  |  |  |  |  |  |
-| 5.  |  |  |  |  |  |  |  |
+| 1. Matching query completes all three tools | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 2. Impossible query stops before suggest_outfit | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 3. Selected item id reaches both later tools | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 4. Fit card (original wording) | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 5. Search results respect price and size | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 4R. *(revised)* 1–3 `#`hashtags, ≤2 of 5 share an opener | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5), no two share an opener |
 
-**Did it help, and how do I know:**
+The five criterion-4 cards after the change:
 
-<!-- If it made things worse, say that. Honestly reported, that earns full
-     credit and is more interesting than one that worked. -->
+```
+1. Chasing that effortless 90s grunge feel today by pairing this perfectly faded charcoal top with baggy dark denim and heavy boots. It has that authentic broken in drape you can only get from a real vintage piece, which I grabbed on depop for just $19. Swapping the jeans for crisp khaki trousers gives it an easy high low street edge. #grunge #vintagestyle #streetwear
+2. Channeling effortless 90s grunge with this faded grey band tee. I grabbed it on depop for just $19 and love how the vintage wash anchors both edgy denim and relaxed khakis. #streetwear #vintagestyle #90sgrunge
+3. Leaning into full grunge streetwear mode today with this faded charcoal band tee and chunky combat boots. Layered it under a worn-in black denim jacket to nail that effortless, slouchy silhouette. Score it on depop for just $19 while it lasts. #streetwear #grungetyle #vintagetee
+4. This perfectly faded grey band tee adds that effortless grunge edge to everyday outfits. I love how easily it transitions from heavy combat boots to crisp white sneakers. Snagged this vintage gem for $19 on depop. #grunge #streetwear #thrifted
+5. Heavy faded grey denim and chunky boots give this vintage band tee that perfect broken-in grunge look. Layered it up for chilly days and kept the proportions super slouchy. Scored this gem on depop for $19 and it is never leaving heavy rotation. #vintagestyle #grungeaesthetic #streetwear
+```
 
+**Did it help, and how do I know:** Yes, on what it targeted. 4R went from
+MISSED (2/5) to MET (5/5), and the other five rows didn't move. The change
+also held outside the criterion-4 scenario. Across all 20 cards in each run
+(criteria 1, 3, 4 and the empty-wardrobe run):
 
+| Across all 20 cards | Before | After |
+|---|---|---|
+| Open with "Scored…" | 19 | 0 |
+| Have 1–3 real `#` hashtags | 12 | 20 |
+| Most common two-word opener | "scored this" ×19 | "chasing that" ×3 |
+| Length, min / mean / max (chars) | 211 / 280 / 356 | 209 / 302 / 388 |
+| Over 350 chars | 1 | 2 |
+
+**What it cost:** cards got about 20 characters longer on average, and the
+longest is now 388, 12 short of criterion 4's limit. Moving the price and
+platform out of the opener added a sentence. A new, weaker template is
+appearing ("chasing that" ×3 of 20), and the "I bought it" line just moved to
+the end ("Scored this gem on depop for $19"). Card 3's "Score it on depop …
+while it lasts" reads like an ad for someone else rather than a post about my
+own find. Five tries can't tell me whether the length will start breaking
+the 400-character rule. Twenty cards came close twice.
 
 ---
 
 ## What's Still Broken
 
-<!-- For each criterion still missed: what you'd do, and why you stopped where
-     you did. "I ran out of time" is fine if it's true. Pretending nothing is
-     left is not. -->
+Nothing is MISSED against its target after the improvement, so this is about
+the gaps the targets don't cover, and what I'd do next.
 
-
+- **Fit card length is drifting toward the limit (criterion 4c).** The max
+  went from 356 to 388 because the new prompt adds a sentence. What I'd do:
+  run 4R with `--tries 20`. If any card goes over 400, change the rule to
+  "2 to 3 sentences" rather than lowering the limit. I stopped because this is
+  a risk, not a miss, and the rule is one change per unit.
+- **The opener template moved instead of disappearing.** 3 of 20 cards open
+  "Chasing that", and most still say "grabbed/scored … on depop for $19"
+  somewhere. 4R as written only looks at the first two words. A stricter
+  version would look at three different items rather than one item five
+  times, since "two items produce the same opening" is the failure I actually
+  care about. I'd add that as a new criterion next time rather than move this
+  one's target after the fact.
+- **Search answers a different question without saying so.** `vintage
+  crewneck size L` returns a band tee, because `search_listings` counts any
+  single overlapping keyword (`vintage`), and there's no crewneck in L. The
+  user is never told "no crewnecks in L; here's the closest vintage top".
+  Criterion 5 passed because it checks the filters, not relevance. What I'd do:
+  require the item-type word (the noun: tee, jacket, crewneck) to match, and
+  if it can't, take the empty-search branch with the existing "size is what's
+  ruling it out" message. That is a change to the tool and the branch. It's
+  the second improvement I'd make, and it's not made here because this unit
+  allows one.
+- **Criterion 1's target is low.** 4 of 5 hedged against rate limits that
+  the starter's pacing handled every time (10/10 across both runs). I'd move
+  it to 5 of 5 in a new criterion, not by editing this one.
+- **MCP adds about a second per search, and up to four on the empty path**
+  (`explain_no_results` re-searches three times, each through a fresh server
+  process). That's fine for a CLI. In `serve.py` I'd keep one MCP session
+  open per request instead of one per call.
 
 <!-- ═════════════════════════════════════════════════════════════════════
 
