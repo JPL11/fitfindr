@@ -57,6 +57,20 @@ def c4_checks(s):
     return fails
 
 
+def c4r_checks(s):
+    """Criterion 4 as revised in unit 4: (d) becomes 1-3 hashtags written with #."""
+    card = s["fit_card"] or ""
+    fails = [f for f in c4_checks(s) if not f.startswith("(d)")]
+    tags = re.findall(r"#\w+", card)
+    if not 1 <= len(tags) <= 3:
+        fails.append(f"(d') {len(tags)} #hashtags")
+    return fails
+
+
+def opener(card):
+    return " ".join(re.findall(r"[a-z']+", (card or "").lower())[:2])
+
+
 def first_sentence(card):
     return re.split(r"(?<=[.!?])\s", (card or "").strip(), maxsplit=1)[0].strip().lower()
 
@@ -73,11 +87,13 @@ def c5(s, query):
     return not bad, f"{len(results)} results" + (f", violating: {bad}" if bad else ", 0 violating")
 
 
-TARGETS = {1: (4, "4 of 5"), 2: (5, "5 of 5"), 3: (5, "5 of 5"), 4: (4, "4 of 5"), 5: (5, "5 of 5")}
+TARGETS = {1: (4, "4 of 5"), 2: (5, "5 of 5"), 3: (5, "5 of 5"), 4: (4, "4 of 5"),
+           "4R": (4, "4 of 5"), 5: (5, "5 of 5")}
 NAMES = {1: "Matching query completes all three tools",
          2: "Impossible query stops before suggest_outfit",
          3: "Selected item id reaches both later tools",
          4: "Fit card has price + platform, ≤400 chars, ≤3 hashtags",
+         "4R": "(revised) …1–3 #hashtags, ≤2 of 5 share an opener",
          5: "Search results respect price and size"}
 
 
@@ -105,6 +121,9 @@ def main(path):
                 fails = c4_checks(s) if s["fit_card"] else ["no fit card"]
                 ok, why = not fails, ", ".join(fails)
                 cards.append(s["fit_card"])
+                rfails = c4r_checks(s) if s["fit_card"] else ["no fit card"]
+                cells["4R"].append("PASS" if not rfails else "FAIL")
+                notes["4R"].append(", ".join(rfails) + f" | opener: {opener(s['fit_card'])!r}")
             else:
                 ok, why = c5(s, sc["query"])
                 why = f"{sc['query']!r}: {why}"
@@ -113,15 +132,19 @@ def main(path):
 
     firsts = [first_sentence(c) for c in cards if c]
     dupes = len(firsts) != len(set(firsts))
+    openers = [opener(c) for c in cards if c]
+    top_opener = max((openers.count(o) for o in openers), default=0)
 
     print("| Criterion | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |")
     print("|---|---|---|---|---|---|---|---|")
     for n, (need, target) in TARGETS.items():
         passes = cells[n].count("PASS")
-        met = passes >= need and not (n == 4 and dupes)
+        met = passes >= need and not (n == 4 and dupes) and not (n == "4R" and top_opener > 2)
         verdict = f"{'MET' if met else 'MISSED'} ({passes}/{len(cells[n])})"
         if n == 4 and dupes:
             verdict += ", repeated first sentence"
+        if n == "4R":
+            verdict += f", {top_opener}/5 share an opener"
         print(f"| {n}. {NAMES[n]} | {target} | {' | '.join(cells[n])} | {verdict} |")
 
     print("\nPer-try notes:")
@@ -132,6 +155,7 @@ def main(path):
     for f in firsts:
         print(f"  - {f}")
     print(f"  all different: {not dupes}")
+    print(f"  two-word openers: {openers}")
 
 
 if __name__ == "__main__":

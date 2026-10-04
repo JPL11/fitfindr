@@ -299,61 +299,135 @@ I used Claude Code for this build.
 
 ## Run Log — Before
 
-<!-- Five criteria, five tries each, in this exact format.
-
-     Five, because your criteria are written out of five. Mark each try PASS
-     or FAIL, count the passes, and read that count against your target — a
-     row targeting 4 of 5 with three PASS cells is MISSED (3/5).
-
-     `python run_eval.py --label before` runs everything and writes the table
-     into results/. Paste it here and fill in the verdicts. -->
+`python run_eval.py --label before`, with the cache off. The full log is
+[`results/run_2026-10-04_1218_before.md`](results/run_2026-10-04_1218_before.md),
+plus the raw sessions in the matching `.json`. PASS/FAIL comes from
+`python score_run.py results/run_2026-10-04_1218_before.json`, which applies
+each criterion in `criteria.md` as written. For criteria 1–4 the five tries
+are five runs of the same query. For criterion 5 they are the five queries
+the criterion names, run once each (the search is deterministic).
 
 | Criterion | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |
 |---|---|---|---|---|---|---|---|
-| 1.  |  |  |  |  |  |  |  |
-| 2.  |  |  |  |  |  |  |  |
-| 3.  |  |  |  |  |  |  |  |
-| 4.  |  |  |  |  |  |  |  |
-| 5.  |  |  |  |  |  |  |  |
+| 1. Matching query completes all three tools | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 2. Impossible query stops before suggest_outfit | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 3. Selected item id reaches both later tools | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 4. Fit card has price + platform, ≤400 chars, ≤3 hashtags, no repeated first sentence | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 5. Search results respect price and size | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 4R. *(criterion 4 as revised — see below)* 1–3 `#`hashtags, ≤2 of 5 share an opener | 4 of 5 | PASS | FAIL | PASS | FAIL | FAIL | MISSED (2/5), 4/5 open "scored this" |
 
-**Real output from one try**, pasted as text, naming the file and function
-that produced it:
+**Real output, one try per criterion.** All of it was produced by
+`agent.py::run_agent` (the trace) under `run_eval.py::run_once`.
+
+*Criterion 1, try 1* (`vintage graphic tee under $30`): all three tools ran,
+and `tools.py::create_fit_card` returned:
 
 ```
+Scored this faded vintage band tee on depop for just $19 and I am so obsessed with how buttery soft it feels. Tucking it into these crisp khaki trousers totally tones down the heavy grunge energy for a way more balanced everyday look. The brown leather belt and fresh white sneaks pull the whole casual shape together. vintagefashion streetwear outfitinspo
+```
 
+*Criterion 2, try 1*:
+
+```
+[1] parse_query
+      in:  designer ballgown size XXS under $5
+      out: description='designer ballgown', size='XXS', max_price=5.0
+[2] search_listings (via MCP)
+      in:  description='designer ballgown', size='XXS', max_price=5.0
+      out: [] (empty)
+[3] branch
+      →    empty search — stopping before suggest_outfit
+error: Nothing matched 'designer ballgown' in size XXS under $5. No listing uses the words 'designer ballgown', so it's the wording, not your size or budget. Try a plainer word for the item (tee, jeans, jacket, sneakers, bag) or a style (vintage, y2k, grunge, 90s).
+```
+
+*Criterion 3, try 1* (`denim jacket under $50`). `score_run.py::c3`
+compared `selected_item`, `search_results[0]`, and what
+`tool_inputs` recorded going into `suggest_outfit` and `create_fit_card`:
+`ids=['lst_007', 'lst_007', 'lst_007', 'lst_007']`.
+
+```
+[2] search_listings (via MCP)
+      in:  description='denim jacket', size=None, max_price=50.0
+      out: 7 items: Denim Jacket — Light Wash, Cropped, High-Waisted Denim Shorts — Cutoff, Denim Vest — Medium Wash, Studded … +4 more
+[3] select_item
+      out: Denim Jacket — Light Wash, Cropped ($42.0, poshmark)
+      →    took result 1 of 7 (lst_007)
+[4] suggest_outfit
+      in:  Denim Jacket — Light Wash, Cropped (lst_007) + wardrobe of 10 items
+      out: Outfit One: White ribbed tank top, Baggy straight-leg jeans, and Chunky white sneakers.  The cropped Wrangler …
+[5] create_fit_card
+      in:  outfit (479 chars) + lst_007
+      out: Scored this vintage Wrangler denim jacket on Poshmark for just $42 and honestly haven't taken it off since. Lo…
+```
+
+*Criterion 4, all five cards* (same query, cache off):
+
+```
+1. Scored this faded graphic tee on depop for just $19 and I am so obsessed with how perfectly broken in it is. Paired it with dark denim and combat boots for an effortlessly cool grunge vibe that feels super easy to throw on. #vintagestyle #grungeaesthetic #streetwear
+2. Scored this amazing vintage band tee on depop for just $19 and it has the absolute best worn-in fade. Paired it with baggy denim and heavy boots for a gritty, effortless look that feels straight out of the nineties. Grunge style is just too easy when the pieces do all the talking. streetwear vintage outfit
+3. Scored this vintage band tee on depop for just $19 and I am so obsessed with how it looks dressed down with baggy denim and heavy boots. The faded wash gives it that genuinely lived-in feel that brand new shirts just cannot replicate. #grunge #vintagestyle #streetwear
+4. Scored this perfectly faded band tee on depop for just $19 and I am obsessed with the grunge energy. I love dressing it down with baggy denim and combat boots for that effortless 90s streetwear look. vintage streetwear bandtee
+5. Found this faded grey band tee on depop for $19 and it instantly became my go-to for effortless grunge streetwear. Paired it with baggy denim and heavy boots for that broken-in 90s feel. Total thrift score. vintage streetwear grungy
+```
+
+*Criterion 5, try 5* (`vintage crewneck size L`): `8 results, 0 violating`.
+Both crewnecks in the data are `XL` and neither came back:
+
+```
+[2] search_listings (via MCP)
+      in:  description='vintage crewneck', size='L', max_price=None
+      out: 8 items: Vintage Band Tee — Faded Grey, Vintage Graphic Hoodie — Faded Black, Vintage Linen Blazer — Cream … +5 more
 ```
 
 ---
 
 ## Verdicts and Diagnoses
 
-<!-- MET or MISSED per criterion against LAST UNIT's target, plus a sentence on
-     how you decided.
-
-     Then, for every miss: which of the four places it happened — a tool, the
-     loop's branch, the session, or the model's output — AND the mechanism.
-
-     Not a diagnosis:  "The fit card was bad."
-     A diagnosis:      "The fit card criterion missed on 2 of 5 items. Both had
-                        an empty brand field. My prompt puts the brand in the
-                        first sentence, so the card opened with a blank and read
-                        like a fragment. The tool worked; the prompt assumed a
-                        field that isn't always there."
-
-     Look for a pattern. Three misses on the same tool is one problem, not
-     three. -->
-
 | # | Criterion | Target | Verdict | How I decided |
 |---|---|---|---|---|
-| 1 |  |  |  |  |
-| 2 |  |  |  |  |
-| 3 |  |  |  |  |
-| 4 |  |  |  |  |
-| 5 |  |  |  |  |
+| 1 | Matching query completes all three tools | 4 of 5 | MET (5/5) | Each try had `error=None`, a non-empty `fit_card`, and `steps` equal to the three tool names in order |
+| 2 | Impossible query stops before suggest_outfit | 5 of 5 | MET (5/5) | `steps == ['search_listings']`, `outfit_suggestion` and `fit_card` both `None`, and the message names what to change (it says "word") |
+| 3 | Selected item reaches both later tools | 5 of 5 | MET (5/5) | All four ids were `lst_007` in every try |
+| 4 | Fit card is postable (original wording) | 4 of 5 | MET (5/5) | All five cards had `$19`, `depop`, ≤400 chars (228–307), ≤3 `#` tags, and five different first sentences. **But see the revision**: the verdict is MET and still wrong about what I cared about |
+| 4R | Fit card (revised in `criteria.md`) | 4 of 5 | MISSED (2/5) | Tries 2, 4 and 5 have zero `#` hashtags (their tags are bare words), and 4 of 5 open with "scored this" |
+| 5 | Search respects price and size | 5 of 5 | MET (5/5) | Every result for all five queries was within `max_price` and passed the size rule. Each query returned ≥1 result |
 
-**Diagnoses**
+**Nothing missed against the unit 3 targets, and some of those targets were
+too low.** Criterion 1 at 4 of 5 was a hedge for rate-limit failures. The
+starter's pacing and retries absorbed every limit hit (the run paused four
+times and never failed), so 5 of 5 is the honest target now. Criteria 2, 3
+and 5 test deterministic code, and 5/5 is what they should get. They
+confirm the branch, the session and the filters work. They were never likely
+to miss.
 
+**Criterion 4 is the one I'd tighten, and did** (revision written under the
+original in `criteria.md`, original left in place). Reading the cards instead
+of counting them showed two things the original wording passed:
 
+- **Diagnosis, 4R part (d), the hashtags.** Place: the **model's output**,
+  caused by the **prompt** in `tools.py::create_fit_card`. Mechanism: the
+  prompt says *"At most 3 hashtags, at the end."* It never says a hashtag
+  starts with `#`, and "at most" allows zero. So at temperature 0.9 the model
+  ends about half the cards with a run of bare words (`vintage streetwear
+  bandtee`). Across all 20 cards in the run, only 12 had 1–3 real `#`
+  hashtags. The tool, the loop and the session are fine: the same item and
+  outfit went in every time (criterion 3).
+- **Diagnosis, 4R openers.** Same place, same prompt. Mechanism: the prompt's
+  one content rule is *"Mention the item, the price written exactly as $19,
+  and depop — each once"*, and the system line asks for first person. The
+  cheapest way to satisfy all of that is one opening clause: "Scored this
+  [item] on depop for just $19". 19 of the 20 cards in the whole run open
+  "Scored this", across three different items and both wardrobes. Temperature
+  only changes the adjective in the middle.
+- **Pattern:** both misses are one problem, the fit-card prompt, not two.
+  They show up in every scenario that writes a card, including the
+  empty-wardrobe diagnostic run.
+
+**Something no criterion caught.** `vintage crewneck size L` returned a band
+tee as the top result. There is no crewneck in size L, and the search scores
+any single keyword overlap (`vintage`), so it silently answered a different
+question. Criterion 5 passed because it checks the filters, not relevance.
+See What's Still Broken.
 
 ---
 

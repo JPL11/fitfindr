@@ -82,6 +82,23 @@ for these things but the model at temperature 0.9 sometimes writes "under
 thirty bucks" instead of "$24", or goes a bit long. The "no two identical
 first sentences" part makes sure the cache is off and the temperature isn't 0.
 
+> **Revised in unit 4:** For the matching query run 5 times with the cache
+> off, the fit card (a) contains the item's price as `$NN`, (b) contains the
+> platform name, (c) is 400 characters or fewer, and (d) has **1 to 3
+> hashtags, each written with `#`**. All four hold in at least 4 of 5 tries,
+> and **no more than 2 of the 5 cards open with the same first two words**.
+>
+> **Why revised:** The original scored 5/5 and still let through what I'd be
+> unhappy to see, so it was measuring the wrong thing.
+> (1) "At most 3 hashtags" only counts words starting with `#`. A card ending
+> `vintage streetwear bandtee` (tags typed without `#`, which happened in
+> 3 of the 5 criterion-4 tries) counted as zero hashtags and passed, but you
+> can't post that. (2) "No two share the same first sentence" can't see a
+> template. 4 of the 5 cards opened "Scored this … on depop for just $19",
+> and they only differed by an adjective in the middle, so exact-sentence
+> matching called them all different. Counting shared two-word openers is
+> something I can score, and it catches the template.
+
 ---
 
 ## 5. Search respects the price ceiling and size
