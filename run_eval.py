@@ -94,7 +94,9 @@ def main():
         print(f"  query: {scenario['query']}")
 
         tries = []
-        for attempt in range(1, args.tries + 1):
+        # A scenario can ask for fewer tries — criterion 5 uses five different
+        # queries once each instead of one query five times.
+        for attempt in range(1, scenario.get("tries", args.tries) + 1):
             record = run_once(scenario)
             tries.append(record)
 
@@ -202,6 +204,15 @@ def write_report(rows, args):
                 lines += ["Trace:", "", "```", record["trace"], "```", ""]
 
     path.write_text("\n".join(lines), encoding="utf-8")
+
+    # The raw sessions too, so score_run.py can check each criterion exactly
+    # as written instead of by eye.
+    import json
+    raw = [{"scenario": r["scenario"],
+            "tries": [{k: t.get(k) for k in ("session", "crashed", "trace")}
+                      for t in r["tries"]]} for r in rows]
+    path.with_suffix(".json").write_text(json.dumps(raw, indent=1, default=str),
+                                         encoding="utf-8")
 
     import generate
 
