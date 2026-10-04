@@ -19,7 +19,7 @@ import config
 import trace
 from tools import suggest_outfit, create_fit_card, query_keywords
 from mcp_client import call_tool, MCPError
-from generate import ModelUnavailable  # noqa: F401 — handled in unit 4
+from generate import ModelUnavailable
 
 
 # ── session state ─────────────────────────────────────────────────────────────
@@ -122,6 +122,7 @@ def run_agent(query: str, wardrobe: dict) -> dict:
 
         if step == "parse":
             session["parsed"] = parse_query(query)
+            trace.step("parse_query", inputs=query, returned=_fmt(session["parsed"]))
             if not query_keywords(session["parsed"]["description"]):
                 # Branch 2: nothing to search for — only a price or a size.
                 session["error"] = (
@@ -129,6 +130,7 @@ def run_agent(query: str, wardrobe: dict) -> dict:
                     "want. Add a word for the item, e.g. 'graphic tee under $30' "
                     "or 'denim jacket size M'."
                 )
+                trace.step("branch", note="no item words in the query — stopping before search")
                 step = "done"
             else:
                 step = "search"
@@ -141,6 +143,7 @@ def run_agent(query: str, wardrobe: dict) -> dict:
                     parsed["description"], parsed["size"], parsed["max_price"]
                 )
             except MCPError as exc:
+                trace.step("search_listings (via MCP)", inputs=_fmt(parsed), returned=f"MCPError: {exc}")
                 session["error"] = (
                     "The listing search couldn't be reached, so nothing was "
                     f"searched. Try again in a moment. ({str(exc).splitlines()[0]})"
@@ -148,20 +151,35 @@ def run_agent(query: str, wardrobe: dict) -> dict:
                 step = "done"
                 continue
             session["steps"].append("search_listings")
+            trace.step("search_listings (via MCP)", inputs=_fmt(parsed),
+                       returned=session["search_results"])
 
             # Branch 1: empty search — stop and say what to change.
             if not session["search_results"]:
                 session["error"] = explain_no_results(parsed)
+                trace.step("branch", note="empty search — stopping before suggest_outfit")
                 step = "done"
             else:
                 session["selected_item"] = session["search_results"][0]
+                trace.step("select_item", returned=session["selected_item"],
+                           note=f"took result 1 of {len(session['search_results'])}"
+                                f" ({session['selected_item']['id']})")
                 step = "suggest"
 
         elif step == "suggest":
             item = session["selected_item"]
             session["tool_inputs"]["suggest_outfit"] = {"new_item": item}
-            session["outfit_suggestion"] = suggest_outfit(item, session["wardrobe"])
+            try:
+                session["outfit_suggestion"] = suggest_outfit(item, session["wardrobe"])
+            except ModelUnavailable as exc:
+                _model_down(session, "suggest_outfit", exc)
+                step = "done"
+                continue
             session["steps"].append("suggest_outfit")
+            n_items = len((session["wardrobe"] or {}).get("items") or [])
+            trace.step("suggest_outfit",
+                       inputs=f"{item['title']} ({item['id']}) + wardrobe of {n_items} items",
+                       returned=session["outfit_suggestion"])
             step = "fit_card"
 
         elif step == "fit_card":
@@ -170,11 +188,38 @@ def run_agent(query: str, wardrobe: dict) -> dict:
                 "outfit": session["outfit_suggestion"],
                 "new_item": item,
             }
-            session["fit_card"] = create_fit_card(session["outfit_suggestion"], item)
+            try:
+                session["fit_card"] = create_fit_card(session["outfit_suggestion"], item)
+            except ModelUnavailable as exc:
+                _model_down(session, "create_fit_card", exc)
+                step = "done"
+                continue
             session["steps"].append("create_fit_card")
+            trace.step("create_fit_card",
+                       inputs=f"outfit ({len(session['outfit_suggestion'])} chars) + {item['id']}",
+                       returned=session["fit_card"])
             step = "done"
 
     return session
+
+
+def _fmt(parsed: dict) -> str:
+    """The parsed query as one readable line for the trace."""
+    return ", ".join(f"{k}={v!r}" for k, v in parsed.items())
+
+
+def _model_down(session: dict, tool: str, exc: Exception) -> None:
+    """The model couldn't be reached. Say what broke and what to try; keep what we have."""
+    item = session["selected_item"]
+    found = f" The search still worked: it found {item['title']} (${item['price']:.0f} on {item['platform']})." if item else ""
+    session["error"] = (
+        f"Couldn't reach the AI model during {tool}, so there's no "
+        f"{'outfit or ' if tool == 'suggest_outfit' else ''}fit card this time.{found} "
+        f"What to try: check GEMINI_API_KEY in your .env file (a single wrong "
+        f"character is enough to break it) and your internet connection, then "
+        f"run the same query again. Model said: {str(exc).splitlines()[0]}"
+    )
+    trace.step(tool, returned=f"ModelUnavailable: {exc}", note="model unreachable — stopping")
 
 
 def _search(description: str, size: str | None, max_price: float | None) -> list[dict]:
