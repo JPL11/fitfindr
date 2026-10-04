@@ -369,17 +369,145 @@ that produced it:
      the same length, your branch isn't working — and this is the fastest way
      anyone will ever find that out. -->
 
+Produced by `agent.py::run_agent` (the `trace.step()` calls) via
+`python app.py ask '...' --trace`. Step 2 is the MCP call.
+
 **Happy path**
 
 ```
+$ python app.py ask 'vintage graphic tee under $30' --trace
+[1] parse_query
+      in:  vintage graphic tee under $30
+      out: description='vintage graphic tee', size=None, max_price=30.0
+[2] search_listings (via MCP)
+      in:  description='vintage graphic tee', size=None, max_price=30.0
+      out: 10 items: Vintage Band Tee — Faded Grey, Graphic Tee — 2003 Tour Bootleg Style, Y2K Baby Tee — Butterfly Print … +7 more
+[3] select_item
+      out: Vintage Band Tee — Faded Grey ($19.0, depop)
+      →    took result 1 of 10 (lst_033)
+[4] suggest_outfit
+      in:  Vintage Band Tee — Faded Grey (lst_033) + wardrobe of 10 items
+      out: Outfit One Baggy straight-leg jeans, dark wash Vintage Band Tee — Faded Grey Vintage black denim jacket Black …
+[5] create_fit_card
+      in:  outfit (534 chars) + lst_033
+      out: Scored this faded grey band tee on depop for just $19 and I am so obsessed with how it looks dressed down with…
 
+  Found:    Vintage Band Tee — Faded Grey — $19.0 on depop
+
+  Outfit:   Outfit One
+Baggy straight-leg jeans, dark wash
+Vintage Band Tee — Faded Grey
+Vintage black denim jacket
+Black combat boots
+Black crossbody bag
+
+This works because the dark denim and combat boots lean into the vintage grunge vibe, while the cropped jacket balances the oversized tee.
+
+
+Outfit Two
+Wide-leg khaki trousers
+Vintage Band Tee — Faded Grey
+Brown leather belt
+Chunky white sneakers
+Black crossbody bag
+
+This works by pairing the relaxed band tee with tailored earth-toned trousers for an effortless, high-low streetwear look.
+
+  Fit card: Scored this faded grey band tee on depop for just $19 and I am so obsessed with how it looks dressed down with baggy dark denim and combat boots. It gives off the absolute best effortless grunge energy, but I also love pairing it with tailored khakis for a slouchy high low mix. vintagebandtee grunge streetwear
+
+0 model calls this session, 2 served from cache
 ```
 
-**Empty search**
+**Empty search**: three steps instead of five, because it stops at the branch.
 
 ```
+$ python app.py ask 'designer ballgown size XXS under $5' --trace
+[1] parse_query
+      in:  designer ballgown size XXS under $5
+      out: description='designer ballgown', size='XXS', max_price=5.0
+[2] search_listings (via MCP)
+      in:  description='designer ballgown', size='XXS', max_price=5.0
+      out: [] (empty)
+[3] branch
+      →    empty search — stopping before suggest_outfit
+
+  Nothing matched 'designer ballgown' in size XXS under $5. No listing uses the words 'designer ballgown', so it's the wording, not your size or budget. Try a plainer word for the item (tee, jeans, jacket, sneakers, bag) or a style (vintage, y2k, grunge, 90s).
+
+0 model calls this session
+```
+
+### The three failure modes, triggered on purpose
+
+**1. Empty search.** Triggered with `designer ballgown size XXS under $5`
+(trace above). Handled since unit 3 by the branch in `agent.py::run_agent`
+and `agent.py::explain_no_results`. The agent says:
+
+> Nothing matched 'designer ballgown' in size XXS under $5. No listing uses
+> the words 'designer ballgown', so it's the wording, not your size or budget.
+> Try a plainer word for the item (tee, jeans, jacket, sneakers, bag) or a
+> style (vintage, y2k, grunge, 90s).
+
+When the price is what rules things out, e.g. `platform sneakers size 8 under
+$20`, it says so instead: *"The price is what's ruling it out: the cheapest
+match is Platform Sneakers — White Chunky Sole at $48. Try raising your budget
+to $48."*
+
+**2. Empty wardrobe.** Triggered with `--empty-wardrobe`. Handled since unit 3
+in `tools.py::suggest_outfit`. There's no crash and no empty string: it
+returns general advice and says that's what it is. The trace shows
+`wardrobe of 0 items` going into `suggest_outfit`.
 
 ```
+$ python app.py ask 'denim jacket under $50' --empty-wardrobe
+(running with an empty wardrobe)
+
+  Found:    Denim Jacket — Light Wash, Cropped — $42.0 on poshmark
+
+  Outfit:   No saved wardrobe yet — general ideas: Outfit One: Pair the cropped jacket with a black ribbed midi dress and chunky black combat boots. The fitted, dark silhouette of the dress creates a sharp contrast with the boxy, light wash denim, while the boots add a cool streetwear edge.
+
+Outfit Two: Layer it over an oversized white graphic t-shirt and olive green utility trousers, finished off with retro canvas sneakers. This combination plays with proportions, balancing the jacket's cropped length with the relaxed, baggy fit of the pants.
+
+  Fit card: Scored this cropped Wrangler jacket on poshmark for $42 and I am obsessed with the boxy fit against my favorite black midi dress and chunky boots. It gives off such an effortless streetwear vibe with that perfect vintage wash. thriftstyle vintagefashion streetwear
+
+0 model calls this session, 2 served from cache
+```
+
+**3. Model unavailable.** Triggered by changing the last character of
+`GEMINI_API_KEY` (as an environment override, so `.env` itself wasn't edited)
+and asking a query not in the cache, `corduroy pants under $40`.
+**Before a handler**, `ModelUnavailable` escaped `run_agent` and `app.py`'s
+catch-all printed:
+
+```
+ModelUnavailable: The model rejected your API key. Check GEMINI_API_KEY in your .env file, or create a fresh key at aistudio.google.com.
+```
+
+That message was readable, but the run's session was lost. The search had
+already succeeded, and the user wasn't told so, or that nothing else in their
+query was wrong. **Added handler:** `agent.py::_model_down`. It catches
+`ModelUnavailable` around both model calls in `run_agent`, keeps what the
+session already has, and stops:
+
+```
+[1] parse_query
+      in:  corduroy pants under $40
+      out: description='corduroy pants', size=None, max_price=40.0
+[2] search_listings (via MCP)
+      in:  description='corduroy pants', size=None, max_price=40.0
+      out: 2 items: Corduroy Wide-Leg Pants — Rust, Low-Rise Cargo Pants — Khaki
+[3] select_item
+      out: Corduroy Wide-Leg Pants — Rust ($32.0, depop)
+      →    took result 1 of 2 (lst_005)
+[4] suggest_outfit
+      out: ModelUnavailable: The model rejected your API key. Check GEMINI_API_KEY in your .env file, or create a fresh k…
+      →    model unreachable — stopping
+
+  Couldn't reach the AI model during suggest_outfit, so there's no outfit or fit card this time. The search still worked: it found Corduroy Wide-Leg Pants — Rust ($32 on depop). What to try: check GEMINI_API_KEY in your .env file (a single wrong character is enough to break it) and your internet connection, then run the same query again. Model said: The model rejected your API key. Check GEMINI_API_KEY in your .env file, or create a fresh key at aistudio.google.com.
+```
+
+The MCP server is a fourth thing that can fail. `MCPError` from `call_tool`
+is caught in the search step, which ends the run with *"The listing search
+couldn't be reached, so nothing was searched. Try again in a moment."*
 
 **On the MCP move:** `search_listings` is registered in
 `mcp_server.py` with a description written for an agent that can't see the
